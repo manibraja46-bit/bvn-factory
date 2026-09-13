@@ -1001,287 +1001,229 @@ function init3DScene() {
     return;
   }
 
-  // Set canvas resolution
-  const dpr = window.devicePixelRatio || 1;
-  canvas3D.width = canvas3D.offsetWidth * dpr;
-  canvas3D.height = canvas3D.offsetHeight * dpr;
-  ctx.scale(dpr, dpr);
-
+  createRacingCars();
   racingRunning = true;
-  racingStarted = false;
-  racingCountdown = 3;
-  racingCountdownStart = Date.now();
+  animate3D();
+}
+
+function animate3D() {
+  if (!animationRunning3D || !racingRunning) return;
+
+  const ctx = canvas3D.getContext('2d');
+  const w = canvas3D.width;
+  const h = canvas3D.height;
+
+  // Clear
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, w, h);
+
+  // Draw track
+  drawTrack(ctx, w, h);
+
+  // Update and draw cars
+  updateAndDrawCars(ctx, w, h);
+
+  // Update HUD
+  updateRaceHUD();
+
+  animationId3D = requestAnimationFrame(animate3D);
+}
+
+function drawTrack(ctx, w, h) {
+  ctx.strokeStyle = '#555';
+  ctx.lineWidth = 2;
+
+  // Road center
+  ctx.setLineDash([10, 10]);
+  ctx.beginPath();
+  ctx.moveTo(w / 2, 0);
+  ctx.lineTo(w / 2, h);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Lane markers
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1;
+  const lanes = [w * 0.25, w * 0.5, w * 0.75];
+  lanes.forEach(x => {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, h);
+    ctx.stroke();
+  });
+}
+
+function updateAndDrawCars(ctx, w, h) {
+  racingCars.forEach(car => {
+    // Update position
+    if (car.player) {
+      if (racingKeys.left) car.x -= 0.03;
+      if (racingKeys.right) car.x += 0.03;
+      if (racingKeys.accelerate) racingSpeed = Math.min(1, racingSpeed + 0.02);
+      car.x = Math.max(-1, Math.min(1, car.x));
+    }
+
+    car.z += car.speed * 0.015;
+
+    // Check if passed finish line
+    if (car.z > 1 && !car.passed) {
+      car.passed = true;
+      if (car.player) {
+        racingLap++;
+        racingScore += 10;
+      }
+    }
+
+    // Reset if off screen
+    if (car.z > 1.2) {
+      car.z = -0.2;
+      car.passed = false;
+      car.x = car.lane;
+    }
+
+    // Draw car
+    const screenX = (w / 2) + car.x * (w / 4);
+    const screenY = h * (1 - car.z);
+    const size = 15 * (car.z + 1);
+
+    ctx.fillStyle = car.color;
+    ctx.fillRect(screenX - size / 2, screenY - size / 2, size, size / 2);
+  });
+}
+
+function updateRaceHUD() {
+  $('speedValue').textContent = Math.round(racingSpeed * 100);
+  $('lapValue').textContent = racingLap + '/' + RACING_LAPS;
+  $('scoreValue').textContent = racingScore;
+  $('overtakesValue').textContent = racingOvertakes;
+}
+
+function reset3DScene() {
   racingSpeed = 0;
   racingDistance = 0;
   racingLap = 1;
   racingScore = 0;
   racingOvertakes = 0;
-
   createRacingCars();
-  $('raceHUD').style.display = 'block';
-  
-  animate3D();
-}
-
-function animate3D() {
-  if (!racingRunning || !canvas3D) return;
-
-  const ctx = canvas3D.getContext('2d');
-  if (!ctx) return;
-
-  const w = canvas3D.offsetWidth;
-  const h = canvas3D.offsetHeight;
-
-  // Clear canvas
-  ctx.fillStyle = '#0a0e1a';
-  ctx.fillRect(0, 0, w, h);
-
-  // Draw road (neon grid)
-  ctx.strokeStyle = '#12dfff';
-  ctx.lineWidth = 2;
-  ctx.globalAlpha = 0.3;
-  for (let i = 0; i < 10; i++) {
-    const roadY = (i * h / 10 + (racingDistance * 50) % (h / 10)) % h;
-    ctx.beginPath();
-    ctx.moveTo(0, roadY);
-    ctx.lineTo(w, roadY);
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1.0;
-
-  // Draw road lanes
-  ctx.strokeStyle = '#ff00ff';
-  ctx.lineWidth = 1;
-  ctx.globalAlpha = 0.5;
-  ctx.beginPath();
-  ctx.moveTo(w / 3, 0);
-  ctx.lineTo(w / 3, h);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo((2 * w) / 3, 0);
-  ctx.lineTo((2 * w) / 3, h);
-  ctx.stroke();
-  ctx.globalAlpha = 1.0;
-
-  // Countdown
-  if (!racingStarted) {
-    const countdownElapsed = (Date.now() - racingCountdownStart) / 1000;
-    if (countdownElapsed < 3) {
-      racingCountdown = Math.ceil(3 - countdownElapsed);
-      ctx.fillStyle = '#12dfff';
-      ctx.font = 'bold 60px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.shadowColor = '#12dfff';
-      ctx.shadowBlur = 20;
-      ctx.fillText(racingCountdown, w / 2, h / 2);
-      ctx.shadowBlur = 0;
-    } else {
-      racingStarted = true;
-    }
-  } else {
-    // Game running
-    if (racingKeys.accelerate) racingSpeed = Math.min(racingSpeed + 0.05, 1);
-    else racingSpeed = Math.max(racingSpeed - 0.03, 0);
-
-    if (racingKeys.brake) racingSpeed = Math.max(racingSpeed - 0.1, 0);
-
-    const playerCar = racingCars[0];
-    if (racingKeys.left) playerCar.x -= 0.05;
-    if (racingKeys.right) playerCar.x += 0.05;
-    playerCar.x = Math.max(-0.8, Math.min(0.8, playerCar.x));
-
-    racingDistance += racingSpeed * 0.01;
-    if (racingDistance > 1) {
-      racingLap++;
-      racingDistance = 0;
-      if (racingLap > RACING_LAPS) {
-        racingRunning = false;
-        ctx.fillStyle = '#51cf66';
-        ctx.font = 'bold 40px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('RACE COMPLETE!', w / 2, h / 2);
-        ctx.font = '20px Arial';
-        ctx.fillText('Score: ' + Math.floor(racingScore), w / 2, h / 2 + 40);
-      }
-    }
-
-    // Update cars
-    for (let car of racingCars) {
-      if (!car.player) {
-        car.z += car.speed * racingSpeed * 0.02;
-        if (car.z > 1) {
-          car.z = -0.5;
-          car.x = (Math.random() - 0.5) * 1.6;
-          car.speed = 0.25 + Math.random() * 0.18;
-        }
-        if (car.hitCooldown > 0) car.hitCooldown--;
-      }
-    }
-
-    // Draw cars
-    for (let car of racingCars) {
-      const screenX = w / 2 + car.x * (w / 2);
-      const screenY = h * (1 - car.z);
-      const carSize = Math.max(10, 40 * (1 - car.z));
-
-      ctx.fillStyle = car.color;
-      ctx.globalAlpha = 0.8 + 0.2 * Math.random();
-      ctx.fillRect(screenX - carSize / 2, screenY - carSize / 2, carSize, carSize);
-      ctx.globalAlpha = 1.0;
-
-      if (car.player) {
-        ctx.strokeStyle = '#12dfff';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(screenX - carSize / 2 - 2, screenY - carSize / 2 - 2, carSize + 4, carSize + 4);
-      }
-    }
-
-    racingScore = Math.floor(racingDistance * 1000 + racingSpeed * 100);
-  }
-
-  // Draw HUD
   updateRaceHUD();
-
-  racingAnimationId = requestAnimationFrame(animate3D);
-}
-
-function updateRaceHUD() {
-  const hud = $('raceHUD');
-  if (!hud) return;
-  const displaySpeed = Math.floor(racingSpeed * 200);
-  hud.innerHTML = `
-    <div class="race-stat">SPEED: ${displaySpeed} km/h</div>
-    <div class="race-stat">LAP: ${racingLap}/${RACING_LAPS}</div>
-    <div class="race-stat">SCORE: ${Math.floor(racingScore)}</div>
-    <div class="race-stat">OVERTAKES: ${racingOvertakes}</div>
-  `;
-}
-
-function reset3DScene() {
-  if (racingAnimationId) cancelAnimationFrame(racingAnimationId);
-  init3DScene();
 }
 
 function toggle3DAnimation() {
-  if (racingRunning) {
-    racingRunning = false;
-    if (racingAnimationId) cancelAnimationFrame(racingAnimationId);
-  } else {
-    init3DScene();
+  animationRunning3D = !animationRunning3D;
+  if (animationRunning3D) {
+    animate3D();
   }
 }
 
-// ===== KEYBOARD & TOUCH CONTROLS =====
-
-document.addEventListener('keydown', function (e) {
-  if (e.key === 'ArrowLeft') racingKeys.left = true;
-  if (e.key === 'ArrowRight') racingKeys.right = true;
-  if (e.key === 'ArrowUp') racingKeys.accelerate = true;
-  if (e.key === 'ArrowDown') racingKeys.brake = true;
-});
-
-document.addEventListener('keyup', function (e) {
-  if (e.key === 'ArrowLeft') racingKeys.left = false;
-  if (e.key === 'ArrowRight') racingKeys.right = false;
-  if (e.key === 'ArrowUp') racingKeys.accelerate = false;
-  if (e.key === 'ArrowDown') racingKeys.brake = false;
-});
-
-// ===== PUMP STATION =====
+// ===== PUMPING STATION =====
 
 function togglePumpStation() {
   pumpActive = !pumpActive;
   const btn = $('pumpToggleBtn');
   const indicator = $('pumpIndicator');
-  
+  const statusText = $('pumpStatusText');
+
   if (pumpActive) {
     btn.textContent = 'POWER OFF';
     btn.classList.remove('large-button');
-    btn.classList.add('danger');
-    indicator.classList.remove('off');
+    indicator.style.background = '#51cf66';
+    statusText.textContent = 'RUNNING';
     startPumpAnimation();
   } else {
     btn.textContent = 'POWER ON';
-    btn.classList.remove('danger');
     btn.classList.add('large-button');
-    indicator.classList.add('off');
+    indicator.style.background = '#666';
+    statusText.textContent = 'STANDBY';
     stopPumpAnimation();
   }
 }
 
 function startPumpAnimation() {
-  if (pumpAnimationId) return;
-  
-  function updatePump() {
-    const pressure = Math.floor(Math.random() * 150 + 50);
-    const flow = Math.floor(Math.random() * 80 + 20);
-    const power = Math.floor(pressure * flow / 100);
-    const temp = Math.floor(Math.random() * 30 + 65);
-    
+  if (pumpAnimationId) clearInterval(pumpAnimationId);
+
+  const piston = $('pumpPiston');
+  const flowIndicator = $('flowIndicator');
+  const flowStatus = $('flowStatus');
+  const flowBarFill = $('flowBarFill');
+
+  piston.classList.remove('stopped');
+  flowIndicator.classList.remove('stopped');
+
+  pumpAnimationId = setInterval(() => {
+    const pressure = Math.round(Math.random() * 80 + 20);
+    const flow = Math.round(Math.random() * 150 + 50);
+    const temp = Math.round(Math.random() * 30 + 72);
+    const power = (pressure * flow / 1000).toFixed(1);
+
     $('pumpPressure').textContent = pressure;
     $('pumpFlow').textContent = flow;
     $('pumpTemp').textContent = temp;
     $('pumpPower').textContent = power;
-    $('pumpStatusText').textContent = 'RUNNING';
-    $('flowStatus').textContent = `Flow: ${flow} GPM`;
-    $('flowBarFill').style.width = (flow / 100) * 100 + '%';
-    
-    if (pumpActive) pumpAnimationId = setTimeout(updatePump, 500);
-  }
-  updatePump();
+
+    flowStatus.textContent = `Flow: ${flow} GPM`;
+    flowBarFill.style.width = (flow / 200) * 100 + '%';
+  }, 500);
 }
 
 function stopPumpAnimation() {
-  if (pumpAnimationId) clearTimeout(pumpAnimationId);
-  pumpAnimationId = null;
-  
+  if (pumpAnimationId) {
+    clearInterval(pumpAnimationId);
+    pumpAnimationId = null;
+  }
+
+  const piston = $('pumpPiston');
+  const flowIndicator = $('flowIndicator');
+
+  piston.classList.add('stopped');
+  flowIndicator.classList.add('stopped');
+
   $('pumpPressure').textContent = '0';
   $('pumpFlow').textContent = '0';
+  $('pumpTemp').textContent = '72';
   $('pumpPower').textContent = '0';
-  $('pumpStatusText').textContent = 'STANDBY';
   $('flowStatus').textContent = 'Flow: Standby';
   $('flowBarFill').style.width = '0%';
 }
 
 function resetPumpStation() {
-  pumpActive = false;
-  stopPumpAnimation();
-  $('pumpToggleBtn').textContent = 'POWER ON';
-  $('pumpToggleBtn').classList.remove('danger');
-  $('pumpToggleBtn').classList.add('large-button');
-  $('pumpIndicator').classList.add('off');
-  $('pumpTemp').textContent = '72';
+  if (pumpActive) {
+    togglePumpStation();
+  }
 }
 
-// ===== VIDEO HANDLING =====
+// ===== VIDEO UPLOAD & PLAYBACK =====
 
 $('file').addEventListener('change', function (e) {
   const file = e.target.files[0];
   if (!file) return;
-  
-  if (objectURL) URL.revokeObjectURL(objectURL);
-  objectURL = URL.createObjectURL(file);
-  
-  videoEl.src = objectURL;
-  splitVideo.src = objectURL;
-  reelVideo.src = objectURL;
-  trimVideo.src = objectURL;
-  
-  $('filename').textContent = file.name;
-  
-  videoEl.addEventListener('loadedmetadata', function () {
-    duration = videoEl.duration;
-    $('totalTime').textContent = time(duration);
-    $('trimEnd').max = duration;
-    $('trimEnd').value = duration;
-    $('endText').textContent = time(duration);
-  }, { once: true });
+
+  const reader = new FileReader();
+  reader.onload = function (event) {
+    if (objectURL) {
+      URL.revokeObjectURL(objectURL);
+    }
+    objectURL = URL.createObjectURL(file);
+    videoEl.src = objectURL;
+    splitVideo.src = objectURL;
+    reelVideo.src = objectURL;
+    trimVideo.src = objectURL;
+
+    videoEl.onloadedmetadata = function () {
+      duration = videoEl.duration;
+      $('totalTime').textContent = time(duration);
+      $('trimEnd').max = duration;
+    };
+
+    $('filename').textContent = file.name;
+    $('status').textContent = '';
+  };
+  reader.readAsArrayBuffer(file);
 });
 
+// ===== SLIDER CONTROLS =====
+
 $('realSlider').addEventListener('input', function () {
-  const val = this.value;
-  $('realValue').textContent = val + '%';
+  $('realValue').textContent = this.value + '%';
 });
 
 $('balance').addEventListener('input', function () {
@@ -1290,12 +1232,96 @@ $('balance').addEventListener('input', function () {
   $('meiBal').textContent = 'MEI: ' + (100 - val) + '%';
 });
 
+// ===== SPLIT & CLIPS =====
+
 function splitHere() {
-  const t = videoEl.currentTime;
-  if (!splitPoints.includes(t)) {
-    splitPoints.push(t);
+  const currentTime = videoEl.currentTime || splitVideo.currentTime || 0;
+  if (currentTime > 0 && !splitPoints.includes(currentTime)) {
+    splitPoints.push(currentTime);
     splitPoints.sort((a, b) => a - b);
-    renderClips();
+    generateClips();
+    renderSplitPoints();
+  }
+}
+
+function generateClips() {
+  clips = [];
+  let start = 0;
+  for (let i = 0; i < splitPoints.length; i++) {
+    clips.push({
+      start: start,
+      end: splitPoints[i],
+      label: `Clip ${i + 1}`
+    });
+    start = splitPoints[i];
+  }
+  if (start < duration) {
+    clips.push({
+      start: start,
+      end: duration,
+      label: `Clip ${clips.length + 1}`
+    });
+  }
+}
+
+function renderSplitPoints() {
+  const clipList = $('clipList');
+  const splitClips = $('splitClips');
+  clipList.innerHTML = '';
+  splitClips.innerHTML = '';
+
+  clips.forEach((clip, i) => {
+    // Clip in home screen
+    const div = document.createElement('div');
+    div.className = 'clip' + (i === selectedClip ? ' selected' : '');
+    div.innerHTML = `
+      <b>${clip.label}</b>
+      <div>${time(clip.start)} - ${time(clip.end)}</div>
+      <div class="clip-buttons">
+        <button onclick="playClip(${i})" class="secondary">▶ PLAY</button>
+        <button onclick="deleteClip(${i})" class="danger">✕ DELETE</button>
+      </div>
+    `;
+    clipList.appendChild(div);
+
+    // Clip in split screen
+    const div2 = document.createElement('div');
+    div2.className = 'clip' + (i === selectedClip ? ' selected' : '');
+    div2.innerHTML = `
+      <b>${clip.label}</b>
+      <div>${time(clip.start)} - ${time(clip.end)}</div>
+      <div class="clip-buttons">
+        <button onclick="playClip(${i})" class="secondary">▶ PLAY</button>
+        <button onclick="deleteClip(${i})" class="danger">✕ DELETE</button>
+      </div>
+    `;
+    splitClips.appendChild(div2);
+  });
+
+  // Timeline markers
+  renderTimeline();
+}
+
+function renderTimeline() {
+  const timeline = $('timeline');
+  timeline.innerHTML = '';
+
+  splitPoints.forEach(point => {
+    const marker = document.createElement('div');
+    marker.className = 'marker';
+    marker.style.left = (point / duration * 100) + '%';
+    timeline.appendChild(marker);
+  });
+}
+
+function deleteClip(index) {
+  if (clips[index]) {
+    const start = clips[index].start;
+    const end = clips[index].end;
+
+    splitPoints = splitPoints.filter(p => p !== start && p !== end);
+    generateClips();
+    renderSplitPoints();
   }
 }
 
@@ -1303,116 +1329,133 @@ function resetSplits() {
   splitPoints = [];
   clips = [];
   selectedClip = 0;
-  renderClips();
+  renderSplitPoints();
+  $('navInfo').textContent = 'No clip selected';
 }
 
-function renderClips() {
-  clips = [];
-  for (let i = 0; i <= splitPoints.length; i++) {
-    const start = splitPoints[i - 1] || 0;
-    const end = splitPoints[i] || duration;
-    if (end > start) clips.push({ start, end });
+function playClip(index) {
+  selectedClip = index;
+  const clip = clips[index];
+  if (clip) {
+    videoEl.currentTime = clip.start;
+    videoEl.play();
+    updateNavInfo();
+    renderSplitPoints();
   }
-  
-  let html = '';
-  clips.forEach((clip, i) => {
-    const sel = i === selectedClip ? 'selected' : '';
-    html += `<div class="clip ${sel}">
-      <b>Clip ${i + 1}</b>
-      <div>${time(clip.start)} → ${time(clip.end)}</div>
-      <div class="clip-buttons">
-        <button onclick="selectClip(${i})">SELECT</button>
-        <button class="secondary" onclick="deleteClip(${i})">DELETE</button>
-      </div>
-    </div>`;
-  });
-  
-  $('clipList').innerHTML = html;
-  $('splitClips').innerHTML = html;
-  updateNavInfo();
-}
-
-function selectClip(i) {
-  selectedClip = i;
-  renderClips();
-}
-
-function deleteClip(i) {
-  splitPoints.splice(i, 1);
-  if (selectedClip >= clips.length) selectedClip = Math.max(0, clips.length - 1);
-  renderClips();
 }
 
 function previousClip() {
-  if (clips.length) {
-    selectedClip = (selectedClip - 1 + clips.length) % clips.length;
-    renderClips();
+  if (selectedClip > 0) {
+    playClip(selectedClip - 1);
   }
 }
 
 function nextClip() {
-  if (clips.length) {
-    selectedClip = (selectedClip + 1) % clips.length;
-    renderClips();
+  if (selectedClip < clips.length - 1) {
+    playClip(selectedClip + 1);
   }
 }
 
 function playSelected() {
-  if (clips.length && selectedClip < clips.length) {
-    videoEl.currentTime = clips[selectedClip].start;
-    videoEl.play();
+  if (clips.length > 0) {
+    playClip(selectedClip);
   }
 }
 
 function updateNavInfo() {
-  if (clips.length && selectedClip < clips.length) {
-    const clip = clips[selectedClip];
-    $('navInfo').innerHTML = `<b>Clip ${selectedClip + 1} of ${clips.length}</b><br>${time(clip.start)} → ${time(clip.end)}`;
-  } else {
-    $('navInfo').textContent = 'No clip selected';
+  if (clips.length === 0) {
+    $('navInfo').textContent = 'No clips yet';
+    return;
   }
+  const clip = clips[selectedClip];
+  $('navInfo').textContent = `${clip.label} • ${time(clip.start)} - ${time(clip.end)}`;
 }
 
+// Update nav info when clips change
+document.addEventListener('click', updateNavInfo);
+
+// ===== VIDEO TIME DISPLAY =====
+
+splitVideo.addEventListener('timeupdate', () => {
+  $('currentTime').textContent = time(splitVideo.currentTime);
+});
+
+splitVideo.addEventListener('loadedmetadata', () => {
+  $('totalTime').textContent = time(splitVideo.duration);
+});
+
+// ===== TRIM SCREEN =====
+
+trimVideo.addEventListener('loadedmetadata', () => {
+  const d = trimVideo.duration;
+  $('trimStart').max = d;
+  $('trimEnd').max = d;
+  $('trimEnd').value = d;
+  updateTrimDisplay();
+});
+
+$('trimStart').addEventListener('input', updateTrimDisplay);
+$('trimEnd').addEventListener('input', updateTrimDisplay);
+
+function updateTrimDisplay() {
+  const start = parseFloat($('trimStart').value);
+  const end = parseFloat($('trimEnd').value);
+  $('startText').textContent = time(start);
+  $('endText').textContent = time(end);
+}
+
+// ===== REEL MODE =====
+
+let reelMode = 'fit';
+
 function fitMode() {
-  reelVideo.style.objectFit = 'contain';
+  reelMode = 'fit';
+  const video = $('reelVideo');
+  video.style.objectFit = 'contain';
+  video.style.width = '100%';
+  video.style.height = '100%';
 }
 
 function cropMode() {
-  reelVideo.style.objectFit = 'cover';
+  reelMode = 'crop';
+  const video = $('reelVideo');
+  video.style.objectFit = 'cover';
+  video.style.width = '100%';
+  video.style.height = '100%';
 }
 
-$('trimStart').addEventListener('input', function () {
-  $('startText').textContent = time(this.value);
-});
-
-$('trimEnd').addEventListener('input', function () {
-  $('endText').textContent = time(this.value);
-});
+// ===== EXPORT =====
 
 function exportVideo() {
   if (!objectURL) {
-    $('exportStatus').textContent = 'Please upload a video first';
+    $('exportStatus').textContent = '❌ No video loaded';
     $('exportStatus').classList.add('error');
     return;
   }
-  
-  const a = document.createElement('a');
-  a.href = objectURL;
-  a.download = 'video.mp4';
-  a.click();
-  
-  $('exportStatus').textContent = 'Export started!';
-  $('exportStatus').classList.remove('error');
+
+  const link = document.createElement('a');
+  link.href = objectURL;
+  link.download = 'video-export.mp4';
+  link.click();
+
+  $('exportStatus').textContent = '✓ Video export started';
   $('exportStatus').classList.add('success');
 }
 
-// ===== INITIALIZATION =====
-
-document.addEventListener('DOMContentLoaded', function () {
-  const firstScreen = document.querySelector('.screen.active') || document.querySelector('.screen');
-  if (firstScreen) showScreen(firstScreen.id);
+// Keyboard controls for 3D racing
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft') racingKeys.left = true;
+  if (e.key === 'ArrowRight') racingKeys.right = true;
+  if (e.key === 'ArrowUp') racingKeys.accelerate = true;
+  if (e.key === 'ArrowDown') racingKeys.brake = true;
 });
 
+document.addEventListener('keyup', (e) => {
+  if (e.key === 'ArrowLeft') racingKeys.left = false;
+  if (e.key === 'ArrowRight') racingKeys.right = false;
+  if (e.key === 'ArrowUp') racingKeys.accelerate = false;
+  if (e.key === 'ArrowDown') racingKeys.brake = false;
+});
 </script>
 </body>
 </html>
