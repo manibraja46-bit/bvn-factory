@@ -711,6 +711,14 @@ p {
   justify-content: center;
   color: #666;
   font-size: 14px;
+  overflow: hidden;
+}
+
+.effect-preview-box video {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border-radius: 15px;
 }
 
 .effect-preview-label {
@@ -857,7 +865,7 @@ Start: <span id="startText">0:00</span> — End: <span id="endText">0:00</span>
 </div>
 </section>
 
-<!-- EFFECTS SCREEN - PHASE 1 CHECKPOINT 1 -->
+<!-- EFFECTS SCREEN - PHASE 1 CHECKPOINT 2 -->
 <section id="effects" class="screen">
 <div class="card">
 <h2>✨ EFFECTS</h2>
@@ -998,542 +1006,296 @@ WebGL is not available in your browser. This feature requires a modern browser w
 <button data-screen="pumping-station" onclick="showScreen('pumping-station')">PUMP</button>
 </div>
 
-</div>
-
 <script>
-// ===== DOM ELEMENTS =====
-const videoEl = document.getElementById('mainVideo');
-const splitVideo = document.getElementById('splitVideo');
-const reelVideo = document.getElementById('reelVideo');
-const trimVideo = document.getElementById('trimVideo');
-const canvas3D = document.getElementById('canvas3d');
+// ============================================================================
+// EFFECTS SYSTEM - PHASE 1 CHECKPOINT 2
+// ============================================================================
 
-// ===== STATE =====
-let objectURL = null;
-let duration = 0;
-let splitPoints = [];
-let clips = [];
-let selectedClip = 0;
-let pumpActive = false;
-let animationRunning3D = true;
-let pumpAnimationId = null;
-let animationId3D = null;
-
-// 3D Racing State
-let racingAnimationId = null;
-let racingRunning = false;
-let racingSpeed = 0;
-let racingDistance = 0;
-let racingLap = 1;
-let racingScore = 0;
-let racingOvertakes = 0;
-let racingCountdown = 3;
-let racingCountdownStart = 0;
-let racingStarted = false;
-let init3DSceneCalled = false;
-
-const racingKeys = {
-  left: false,
-  right: false,
-  accelerate: false,
-  brake: false
-};
-
-const racingCars = [];
-const RACING_LAPS = 3;
-
-// PHASE 1: EFFECTS STATE
-let currentEffect = null;
-let effectParameters = {
-  glow: { intensity: 0.5 },
-  blur: { amount: 5 },
-  sepia: { amount: 0.5 },
-  invert: { amount: 0 },
-  grayscale: { amount: 0 },
-  contrast: { amount: 1 },
-  brightness: { amount: 1 }
-};
-
-const effectDefinitions = [
-  { id: 'glow', name: 'Glow', icon: '💫', param: 'Intensity' },
-  { id: 'blur', name: 'Blur', icon: '🌫️', param: 'Amount' },
-  { id: 'sepia', name: 'Sepia', icon: '📷', param: 'Tone' },
-  { id: 'invert', name: 'Invert', icon: '⚫', param: 'Amount' },
-  { id: 'grayscale', name: 'B&W', icon: '⬜', param: 'Amount' },
-  { id: 'contrast', name: 'Contrast', icon: '◆', param: 'Level' },
-  { id: 'brightness', name: 'Bright', icon: '☀️', param: 'Level' }
-];
-
-// ===== UTILITY =====
-const $ = id => document.getElementById(id);
-
-function time(t) {
-  if (!isFinite(t)) return '0:00';
-  const m = Math.floor(t / 60);
-  const s = Math.floor(t % 60);
-  return m + ':' + String(s).padStart(2, '0');
-}
-
-// ===== MAIN SCREEN NAVIGATION =====
-
-function showScreen(screenId) {
-  if (!screenId) return;
-
-  const target = document.getElementById(screenId);
-  if (!target) {
-    console.warn("Screen not found:", screenId);
-    return;
-  }
-
-  // Hide every screen
-  document.querySelectorAll(".screen").forEach(function (screen) {
-    screen.classList.remove("active");
-  });
-
-  // Show selected screen
-  target.classList.add("active");
-
-  // Update navigation buttons
-  document.querySelectorAll(".nav button").forEach(function (button) {
-    button.classList.toggle(
-      "active",
-      button.getAttribute("data-screen") === screenId
-    );
-  });
-
-  // Initialize EFFECTS screen if needed
-  if (screenId === "effects") {
-    initEffectsScreen();
-  }
-
-  // 3D Racing screen - initialize only once
-  if (screenId === "3d-visual") {
-    if (!init3DSceneCalled) {
-      setTimeout(function () {
-        init3DScene();
-        init3DSceneCalled = true;
-      }, 50);
-    } else if (!racingRunning) {
-      animate3D();
+const effectsConfig = {
+  none: {
+    name: 'None',
+    icon: '✓',
+    filters: {},
+    params: {}
+  },
+  brightness: {
+    name: 'Brightness',
+    icon: '☀️',
+    filters: { brightness: 100 },
+    params: {
+      intensity: { min: 0, max: 200, default: 100, unit: '%', label: 'Brightness' }
+    }
+  },
+  contrast: {
+    name: 'Contrast',
+    icon: '◐',
+    filters: { contrast: 100 },
+    params: {
+      intensity: { min: 0, max: 200, default: 100, unit: '%', label: 'Contrast' }
+    }
+  },
+  grayscale: {
+    name: 'Grayscale',
+    icon: '◻',
+    filters: { grayscale: 0 },
+    params: {
+      intensity: { min: 0, max: 100, default: 0, unit: '%', label: 'Grayscale' }
+    }
+  },
+  sepia: {
+    name: 'Sepia',
+    icon: '🟫',
+    filters: { sepia: 0 },
+    params: {
+      intensity: { min: 0, max: 100, default: 0, unit: '%', label: 'Sepia' }
+    }
+  },
+  saturate: {
+    name: 'Saturate',
+    icon: '🎨',
+    filters: { saturate: 100 },
+    params: {
+      intensity: { min: 0, max: 200, default: 100, unit: '%', label: 'Saturation' }
+    }
+  },
+  huerotate: {
+    name: 'Hue Rotate',
+    icon: '🌈',
+    filters: { 'hue-rotate': 0 },
+    params: {
+      angle: { min: 0, max: 360, default: 0, unit: '°', label: 'Hue Angle' }
+    }
+  },
+  blur: {
+    name: 'Blur',
+    icon: '〰',
+    filters: { blur: 0 },
+    params: {
+      intensity: { min: 0, max: 20, default: 0, unit: 'px', label: 'Blur' }
+    }
+  },
+  invert: {
+    name: 'Invert',
+    icon: '◆',
+    filters: { invert: 0 },
+    params: {
+      intensity: { min: 0, max: 100, default: 0, unit: '%', label: 'Invert' }
     }
   }
+};
 
-  // Scroll screen to top
-  window.scrollTo({
-    top: 0,
-    behavior: "smooth"
+let currentEffect = null;
+let currentEffectParams = {};
+let mainVideoLoaded = false;
+
+// Initialize Effects Grid
+function initializeEffectsGrid() {
+  const grid = document.getElementById('effectsGrid');
+  grid.innerHTML = '';
+  
+  Object.entries(effectsConfig).forEach(([key, effect]) => {
+    const card = document.createElement('div');
+    card.className = 'effect-card';
+    card.innerHTML = `
+      <div class="effect-icon">${effect.icon}</div>
+      <div class="effect-name">${effect.name}</div>
+    `;
+    card.onclick = () => selectEffect(key);
+    grid.appendChild(card);
   });
 }
 
-// ===== PHASE 1: EFFECTS FUNCTIONS =====
-
-function initEffectsScreen() {
-  const grid = $('effectsGrid');
-  if (grid.children.length === 0) {
-    effectDefinitions.forEach(function(effect) {
-      const card = document.createElement('div');
-      card.className = 'effect-card';
-      card.innerHTML = '<span class="effect-icon">' + effect.icon + '</span><div class="effect-name">' + effect.name + '</div>';
-      card.onclick = function() {
-        selectEffect(effect.id, effect.param);
-      };
-      grid.appendChild(card);
+// Select an effect
+function selectEffect(effectKey) {
+  currentEffect = effectKey;
+  currentEffectParams = {};
+  
+  // Update UI
+  document.querySelectorAll('.effect-card').forEach((card, idx) => {
+    const effectKeys = Object.keys(effectsConfig);
+    card.classList.toggle('active', effectKeys[idx] === effectKey);
+  });
+  
+  const effect = effectsConfig[effectKey];
+  const controlsDiv = document.getElementById('effectControls');
+  const previewBox = document.getElementById('effectPreviewBox');
+  
+  if (effectKey === 'none') {
+    controlsDiv.style.display = 'none';
+    previewBox.innerHTML = 'No effect selected';
+    applyEffect();
+  } else {
+    // Initialize parameters
+    Object.entries(effect.params).forEach(([paramKey, paramConfig]) => {
+      currentEffectParams[paramKey] = paramConfig.default;
     });
+    
+    // Show single parameter control (Phase 1 only one param per effect)
+    const firstParam = Object.entries(effect.params)[0];
+    if (firstParam) {
+      const [paramKey, paramConfig] = firstParam;
+      const paramLabel = document.getElementById('effectParamLabel');
+      const paramValue = document.getElementById('effectParamValue');
+      const paramSlider = document.getElementById('effectParamSlider');
+      
+      paramLabel.textContent = paramConfig.label;
+      paramSlider.min = paramConfig.min;
+      paramSlider.max = paramConfig.max;
+      paramSlider.value = paramConfig.default;
+      paramValue.textContent = paramConfig.default + paramConfig.unit;
+      
+      paramSlider.onchange = (e) => updateEffectParam(paramKey, e.target.value, paramConfig);
+      paramSlider.oninput = (e) => updateEffectParam(paramKey, e.target.value, paramConfig);
+    }
+    
+    controlsDiv.style.display = 'block';
+    previewBox.innerHTML = '<span style="color: #999;">Effect preview will show here</span>';
+    applyEffect();
   }
 }
 
-function selectEffect(effectId, paramLabel) {
-  currentEffect = effectId;
-  
-  // Update card selection
-  document.querySelectorAll('.effect-card').forEach(function(card) {
-    card.classList.remove('active');
-  });
-  event.target.closest('.effect-card').classList.add('active');
-  
-  // Show controls
-  $('effectControls').style.display = 'block';
-  $('effectParamLabel').textContent = paramLabel;
-  
-  // Set slider range and value based on effect
-  const slider = $('effectParamSlider');
-  let maxVal = 100;
-  let currentVal = 50;
-  
-  if (effectId === 'blur') {
-    maxVal = 20;
-    currentVal = effectParameters.blur.amount;
-  } else if (effectId === 'glow') {
-    maxVal = 100;
-    currentVal = effectParameters.glow.intensity * 100;
-  } else if (effectId === 'contrast' || effectId === 'brightness') {
-    maxVal = 200;
-    currentVal = effectParameters[effectId].amount * 100;
-  } else {
-    currentVal = effectParameters[effectId].amount * 100;
-  }
-  
-  slider.max = maxVal;
-  slider.value = currentVal;
-  updateEffectParamDisplay();
+// Update effect parameter
+function updateEffectParam(paramKey, value, paramConfig) {
+  currentEffectParams[paramKey] = parseInt(value);
+  document.getElementById('effectParamValue').textContent = value + paramConfig.unit;
+  applyEffect();
 }
 
-function updateEffectParamDisplay() {
-  if (!currentEffect) return;
+// Apply effect to preview video
+function applyEffect() {
+  const previewBox = document.getElementById('effectPreviewBox');
   
-  const slider = $('effectParamSlider');
-  let displayVal = slider.value;
-  
-  if (currentEffect === 'blur') {
-    effectParameters.blur.amount = parseInt(displayVal);
-    displayVal = displayVal + 'px';
-  } else if (currentEffect === 'contrast' || currentEffect === 'brightness') {
-    effectParameters[currentEffect].amount = displayVal / 100;
-    displayVal = (displayVal / 100).toFixed(2);
-  } else {
-    effectParameters[currentEffect].amount = displayVal / 100;
-    displayVal = displayVal + '%';
-  }
-  
-  $('effectParamValue').textContent = displayVal;
-  updateEffectPreview();
-}
-
-function updateEffectPreview() {
-  const previewBox = $('effectPreviewBox');
-  
-  if (!currentEffect) {
-    previewBox.textContent = 'No effect selected';
-    previewBox.style.filter = 'none';
+  if (!mainVideoLoaded || !document.getElementById('mainVideo').src) {
+    previewBox.innerHTML = '<span style="color: #999;">Please upload a video first</span>';
     return;
   }
   
-  previewBox.textContent = 'Effect: ' + currentEffect.toUpperCase();
+  // Clear previous video
+  previewBox.innerHTML = '';
   
-  let filterStr = '';
-  switch(currentEffect) {
-    case 'glow':
-      filterStr = 'drop-shadow(0 0 ' + (effectParameters.glow.intensity * 20) + 'px rgba(47, 127, 245, 0.6))';
-      break;
-    case 'blur':
-      filterStr = 'blur(' + effectParameters.blur.amount + 'px)';
-      break;
-    case 'sepia':
-      filterStr = 'sepia(' + effectParameters.sepia.amount + ')';
-      break;
-    case 'invert':
-      filterStr = 'invert(' + effectParameters.invert.amount + ')';
-      break;
-    case 'grayscale':
-      filterStr = 'grayscale(' + effectParameters.grayscale.amount + ')';
-      break;
-    case 'contrast':
-      filterStr = 'contrast(' + effectParameters.contrast.amount + ')';
-      break;
-    case 'brightness':
-      filterStr = 'brightness(' + effectParameters.brightness.amount + ')';
-      break;
+  // Create or reuse video element for preview
+  let previewVideo = previewBox.querySelector('video');
+  if (!previewVideo) {
+    previewVideo = document.createElement('video');
+    previewVideo.style.width = '100%';
+    previewVideo.style.height = '100%';
+    previewVideo.controls = false;
+    previewVideo.loop = true;
+    previewVideo.style.borderRadius = '15px';
+    previewBox.appendChild(previewVideo);
   }
   
-  previewBox.style.filter = filterStr;
+  const mainVideo = document.getElementById('mainVideo');
+  previewVideo.src = mainVideo.src;
+  previewVideo.currentTime = mainVideo.currentTime;
+  previewVideo.play().catch(() => {});
+  
+  // Apply CSS filters
+  let filterString = '';
+  if (currentEffect !== 'none' && currentEffect) {
+    const effect = effectsConfig[currentEffect];
+    const paramKey = Object.keys(effect.params)[0];
+    const paramValue = currentEffectParams[paramKey] || effect.params[paramKey].default;
+    
+    switch(currentEffect) {
+      case 'brightness':
+        filterString = `brightness(${paramValue}%)`;
+        break;
+      case 'contrast':
+        filterString = `contrast(${paramValue}%)`;
+        break;
+      case 'grayscale':
+        filterString = `grayscale(${paramValue}%)`;
+        break;
+      case 'sepia':
+        filterString = `sepia(${paramValue}%)`;
+        break;
+      case 'saturate':
+        filterString = `saturate(${paramValue}%)`;
+        break;
+      case 'huerotate':
+        filterString = `hue-rotate(${paramValue}deg)`;
+        break;
+      case 'blur':
+        filterString = `blur(${paramValue}px)`;
+        break;
+      case 'invert':
+        filterString = `invert(${paramValue}%)`;
+        break;
+    }
+  }
+  
+  previewVideo.style.filter = filterString;
 }
 
+// Reset all effects
 function resetEffects() {
   currentEffect = null;
-  $('effectControls').style.display = 'none';
-  document.querySelectorAll('.effect-card').forEach(function(card) {
+  currentEffectParams = {};
+  
+  document.querySelectorAll('.effect-card').forEach((card, idx) => {
     card.classList.remove('active');
+    const effectKeys = Object.keys(effectsConfig);
+    if (effectKeys[idx] === 'none') {
+      card.classList.add('active');
+    }
   });
-  $('effectPreviewBox').style.filter = 'none';
-  $('effectPreviewBox').textContent = 'No effect selected';
   
-  // Reset all effect parameters
-  effectParameters = {
-    glow: { intensity: 0.5 },
-    blur: { amount: 5 },
-    sepia: { amount: 0.5 },
-    invert: { amount: 0 },
-    grayscale: { amount: 0 },
-    contrast: { amount: 1 },
-    brightness: { amount: 1 }
-  };
+  document.getElementById('effectControls').style.display = 'none';
+  document.getElementById('effectPreviewBox').innerHTML = 'No effect selected';
 }
 
-// Attach slider listener
-document.addEventListener('DOMContentLoaded', function() {
-  const slider = $('effectParamSlider');
-  if (slider) {
-    slider.addEventListener('input', updateEffectParamDisplay);
+// Show screen
+function showScreen(screenId) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(screenId).classList.add('active');
+  
+  document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
+  document.querySelector(`[data-screen="${screenId}"]`).classList.add('active');
+  
+  // When showing effects screen, ensure preview is up to date
+  if (screenId === 'effects' && mainVideoLoaded) {
+    applyEffect();
+  }
+}
+
+// File upload handler
+document.getElementById('file').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (file) {
+    const url = URL.createObjectURL(file);
+    const mainVideo = document.getElementById('mainVideo');
+    mainVideo.src = url;
+    mainVideo.onloadedmetadata = () => {
+      mainVideoLoaded = true;
+      document.getElementById('filename').textContent = file.name;
+      document.getElementById('status').textContent = '✓ Video loaded';
+    };
+    mainVideo.onerror = () => {
+      document.getElementById('status').textContent = '✗ Error loading video';
+    };
   }
 });
 
-// ===== RACING CAR CLASS =====
-
-class RacingCar {
-  constructor(lane, color, player = false) {
-    this.lane = lane;
-    this.x = lane;
-    this.z = player ? 0.05 : Math.random() * 0.65 + 0.25;
-    this.color = color;
-    this.player = player;
-    this.speed = player ? 0 : 0.25 + Math.random() * 0.18;
-    this.passed = false;
-    this.hitCooldown = 0;
-  }
-}
-
-function createRacingCars() {
-  racingCars.length = 0;
-  racingCars.push(new RacingCar(0.33, '#12dfff', true));
-  racingCars.push(new RacingCar(-0.33, '#ff0080', false));
-  racingCars.push(new RacingCar(0, '#00ff88', false));
-  racingCars.push(new RacingCar(0.66, '#ffff00', false));
-  racingCars.push(new RacingCar(-0.66, '#ff8800', false));
-}
-
-// ===== 3D RACING ENGINE =====
-
-function init3DScene() {
-  if (!canvas3D) return;
-  
-  const ctx = canvas3D.getContext('2d');
-  if (!ctx) {
-    $('webglFallback').style.display = 'block';
-    return;
-  }
-  
-  createRacingCars();
-  racingRunning = true;
-  animate3D();
-}
-
-function animate3D() {
-  if (!canvas3D || !animationRunning3D) return;
-  
-  const ctx = canvas3D.getContext('2d');
-  if (!ctx) return;
-  
-  const width = canvas3D.width;
-  const height = canvas3D.height;
-  
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, width, height);
-  
-  // Draw track
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.rect(50, 50, width - 100, height - 100);
-  ctx.stroke();
-  
-  // Draw lane markers
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-  ctx.lineWidth = 1;
-  for (let i = 1; i < 3; i++) {
-    const laneY = 50 + (height - 100) * (i / 3);
-    ctx.beginPath();
-    ctx.moveTo(50, laneY);
-    ctx.lineTo(width - 50, laneY);
-    ctx.stroke();
-  }
-  
-  // Update and draw cars
-  racingCars.forEach(function(car) {
-    car.z += car.speed;
-    if (car.z > 1) car.z -= 1;
-    
-    const carX = 50 + (width - 100) * (0.5 + car.lane * 0.3);
-    const carY = 50 + (height - 100) * car.z;
-    const carSize = 15;
-    
-    ctx.fillStyle = car.color;
-    ctx.fillRect(carX - carSize / 2, carY - carSize / 2, carSize, carSize);
-  });
-  
-  racingAnimationId = requestAnimationFrame(animate3D);
-}
-
-function reset3DScene() {
-  if (racingAnimationId) cancelAnimationFrame(racingAnimationId);
-  racingAnimationId = null;
-  racingRunning = false;
-  racingSpeed = 0;
-  racingDistance = 0;
-  racingLap = 1;
-  racingScore = 0;
-  $('speedValue').textContent = '0';
-  $('lapValue').textContent = '1/3';
-  $('scoreValue').textContent = '0';
-  init3DScene();
-}
-
-function toggle3DAnimation() {
-  animationRunning3D = !animationRunning3D;
-  if (animationRunning3D) {
-    animate3D();
-  }
-}
-
-// ===== VIDEO FUNCTIONS (existing from baseline) =====
-
-function splitHere() {
-  if (!videoEl.src) {
-    alert('Please select a video first');
-    return;
-  }
-  splitPoints.push(videoEl.currentTime);
-  updateClipList();
-}
-
-function resetSplits() {
-  splitPoints = [];
-  clips = [];
-  updateClipList();
-}
-
-function updateClipList() {
-  // Implementation would render clips
-}
-
-function previousClip() {
-  if (selectedClip > 0) {
-    selectedClip--;
-  }
-}
-
-function nextClip() {
-  if (selectedClip < clips.length - 1) {
-    selectedClip++;
-  }
-}
-
-function playSelected() {
-  if (clips.length === 0) return;
-  const clip = clips[selectedClip];
-  if (videoEl) {
-    videoEl.currentTime = clip.start;
-    videoEl.play();
-  }
-}
-
-function fitMode() {
-  if (reelVideo && objectURL) {
-    reelVideo.style.objectFit = 'contain';
-  }
-}
-
-function cropMode() {
-  if (reelVideo && objectURL) {
-    reelVideo.style.objectFit = 'cover';
-  }
-}
-
-function exportVideo() {
-  if (!objectURL) {
-    alert('No video loaded');
-    return;
-  }
-  const a = document.createElement('a');
-  a.href = objectURL;
-  a.download = 'video.mp4';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-}
-
-function togglePumpStation() {
-  pumpActive = !pumpActive;
-  if (pumpActive) {
-    $('pumpToggleBtn').textContent = 'POWER OFF';
-    $('pumpIndicator').classList.remove('off');
-    $('pumpStatusText').textContent = 'ACTIVE';
-    startPumpAnimation();
-  } else {
-    $('pumpToggleBtn').textContent = 'POWER ON';
-    $('pumpIndicator').classList.add('off');
-    $('pumpStatusText').textContent = 'STANDBY';
-    if (pumpAnimationId) cancelAnimationFrame(pumpAnimationId);
-  }
-}
-
-function resetPumpStation() {
-  pumpActive = false;
-  $('pumpToggleBtn').textContent = 'POWER ON';
-  $('pumpIndicator').classList.add('off');
-  $('pumpStatusText').textContent = 'STANDBY';
-  $('pumpPressure').textContent = '0';
-  $('pumpFlow').textContent = '0';
-  $('pumpPower').textContent = '0';
-  $('flowStatus').textContent = 'Flow: Standby';
-  $('flowBarFill').style.width = '0%';
-  if (pumpAnimationId) cancelAnimationFrame(pumpAnimationId);
-}
-
-function startPumpAnimation() {
-  function animatePump() {
-    if (!pumpActive) return;
-    
-    const pressure = 20 + Math.sin(Date.now() / 500) * 15;
-    const flow = 45 + Math.cos(Date.now() / 600) * 25;
-    const power = 3.5 + Math.sin(Date.now() / 700) * 1.5;
-    
-    $('pumpPressure').textContent = Math.round(pressure);
-    $('pumpFlow').textContent = Math.round(flow);
-    $('pumpPower').textContent = power.toFixed(1);
-    $('flowStatus').textContent = 'Flow: ' + Math.round(flow) + ' GPM';
-    $('flowBarFill').style.width = (flow / 70 * 100) + '%';
-    
-    pumpAnimationId = requestAnimationFrame(animatePump);
-  }
-  animatePump();
-}
-
-// ===== VIDEO UPLOAD HANDLER =====
-
-document.addEventListener('DOMContentLoaded', function() {
-  const fileInput = $('file');
-  if (fileInput) {
-    fileInput.addEventListener('change', function(e) {
-      const file = e.target.files[0];
-      if (!file) return;
-      
-      if (objectURL) URL.revokeObjectURL(objectURL);
-      objectURL = URL.createObjectURL(file);
-      
-      videoEl.src = objectURL;
-      splitVideo.src = objectURL;
-      reelVideo.src = objectURL;
-      trimVideo.src = objectURL;
-      
-      $('filename').textContent = file.name;
-      
-      videoEl.addEventListener('loadedmetadata', function() {
-        duration = videoEl.duration;
-        $('totalTime').textContent = time(duration);
-        $('trimEnd').max = duration;
-        $('trimEnd').value = duration;
-        $('endText').textContent = time(duration);
-      }, { once: true });
-    });
-  }
-  
-  const realSlider = $('realSlider');
-  if (realSlider) {
-    realSlider.addEventListener('input', function() {
-      const val = this.value;
-      $('realValue').textContent = val + '%';
-    });
-  }
-  
-  const balance = $('balance');
-  if (balance) {
-    balance.addEventListener('input', function() {
-      const val = this.value;
-      $('realBal').textContent = 'REAL: ' + val + '%';
-      $('meiBal').textContent = 'MEI: ' + (100 - val) + '%';
-    });
-  }
+// Initialize on load
+window.addEventListener('DOMContentLoaded', () => {
+  initializeEffectsGrid();
+  selectEffect('none');
 });
+
+// Stub functions for existing screens (these are called but not implemented in this checkpoint)
+function splitHere() { console.log('Split here'); }
+function resetSplits() { console.log('Reset splits'); }
+function previousClip() { console.log('Previous clip'); }
+function nextClip() { console.log('Next clip'); }
+function playSelected() { console.log('Play selected'); }
+function fitMode() { console.log('Fit mode'); }
+function cropMode() { console.log('Crop mode'); }
+function exportVideo() { console.log('Export video'); }
+function reset3DScene() { console.log('Reset 3D'); }
+function toggle3DAnimation() { console.log('Toggle 3D animation'); }
+function togglePumpStation() { console.log('Toggle pump'); }
+function resetPumpStation() { console.log('Reset pump'); }
 </script>
 </body>
 </html>
